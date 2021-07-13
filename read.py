@@ -1,10 +1,22 @@
 import json, requests, os, sys, math
+from string import punctuation
 
 API = "https://preview.nferx.com/semantics/v1/get_literature_evidence?only_meta=1&"
 COOKIE = {"csrftoken": "XBVPbvzt6gIC2pigF7CPSGaORvPZsqRGSZknmLNhOHNi6wy96t8uO6oSdgRdTTg3", "sessionid": "s55g3459bwoc40m3fy3g2lois8wr7tiz;"}
 
 FRAGMENTS_TO_PROCESS = 1
 WORDS_IN_CONJUNCTION = 4
+
+def strip_leading_trailing_special_char(word_list):
+    for i in range(len(word_list)):
+        print("Before:")
+        print(word_list[i])
+        word_list[i] = word_list[i].strip(punctuation)
+        word_list[i] = word_list[i].strip('“”') # strip left and right quotation marks
+        print("After")
+        print(word_list[i])
+
+    return word_list
 
 def process_input_fragment(fragment):
     """
@@ -59,7 +71,7 @@ def containsNonAlphaNum(word_list):
     """
     for word in word_list:
         for char in word:
-            if not(char.isalnum()):
+            if not(char.isalnum()) and not(char == '-'):
                 return True
     return False
 
@@ -113,12 +125,12 @@ def main():
                 three_querter_length = (3 * number_of_words) / 4
 
                 # conjunction of three disjunctions
-                start = splitted_line[5:7]
-                end = splitted_line[-7:-5]
+                start = strip_leading_trailing_special_char(splitted_line[5:7])
+                end = strip_leading_trailing_special_char(splitted_line[-7:-5])
 
-                middle_disjunction_words = splitted_line[ math.trunc(half_length-1) : math.trunc(half_length+1)]   
-                left_disjunction_words = splitted_line[math.trunc(quarter_length-1): math.trunc(quarter_length+1)]
-                right_disjunction_words = splitted_line[math.trunc(three_querter_length-1): math.trunc(three_querter_length+1)]
+                middle_disjunction_words = strip_leading_trailing_special_char(splitted_line[ math.trunc(half_length-1) : math.trunc(half_length+1)])
+                left_disjunction_words = strip_leading_trailing_special_char(splitted_line[math.trunc(quarter_length-1): math.trunc(quarter_length+1)])
+                right_disjunction_words = strip_leading_trailing_special_char(splitted_line[math.trunc(three_querter_length-1): math.trunc(three_querter_length+1)])
 
                 print("start: ")
                 print(start)
@@ -131,11 +143,11 @@ def main():
                 print("end")
                 print(end)
 
-                query = (start if not(containsNonAlphaNum(start)) else '') + "%3B" + \
-                     (left_disjunction_words if not(containsNonAlphaNum(left_disjunction_words)) else '') + "%3B" + \
-                         (middle_disjunction_words if not(containsNonAlphaNum(middle_disjunction_words)) else '') + "%3B" + \
-                             (right_disjunction_words if not(containsNonAlphaNum(right_disjunction_words)) else '') + "%3B" + \
-                                 (end if not(containsNonAlphaNum(end)) else '')
+                query = '_'.join(start if not(containsNonAlphaNum(start)) else '') + "%3B" + \
+                     '_'.join(left_disjunction_words if not(containsNonAlphaNum(left_disjunction_words)) else '') + "%3B" + \
+                         '_'.join(middle_disjunction_words if not(containsNonAlphaNum(middle_disjunction_words)) else '') + "%3B" + \
+                             '_'.join(right_disjunction_words if not(containsNonAlphaNum(right_disjunction_words)) else '') + "%3B" + \
+                                 '_'.join(end if not(containsNonAlphaNum(end)) else '')
             
             print("Number of words:" + str(number_of_words))
             print("Formed query: " + query)
@@ -195,4 +207,9 @@ def main():
                 end_doc_token_documents[doc["id"]] = doc
 
 if __name__ == "__main__":
+    print(punctuation)
+    # s = "\"hi!"
+    # print(s.strip(punctuation))
+    # sys.exit()
     main()
+    
