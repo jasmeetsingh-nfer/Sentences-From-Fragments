@@ -4,29 +4,28 @@ from string import punctuation
 API = "https://preview.nferx.com/semantics/v1/get_literature_evidence?only_meta=1&"
 COOKIE = {"csrftoken": "XBVPbvzt6gIC2pigF7CPSGaORvPZsqRGSZknmLNhOHNi6wy96t8uO6oSdgRdTTg3", "sessionid": "s55g3459bwoc40m3fy3g2lois8wr7tiz;"}
 
-FRAGMENTS_TO_PROCESS = 100
+FRAGMENTS_TO_PROCESS = 50
 
-def strip_leading_trailing_special_char(word_list):
-    for i in range(len(word_list)):
-        # print("Before:")
-        # print(word_list[i])
-        strip_counter = 0
-        while True:
-            old = word_list[i]
-            word_list[i] = word_list[i].strip(punctuation)
-            word_list[i] = word_list[i].strip('“”') # strip left and right quotation marks
-            strip_counter += 1
-            if word_list[i] == old or strip_counter == 20:
-                break
-        # print("After")
-        # print(word_list[i])
-
-    return word_list
+def strip_leading_trailing_special_char(str):
+    strip_counter = 0
+    while True:
+        old = str
+        str = str.strip(punctuation)
+        str = str.strip('“”') # strip left and right quotation marks
+        strip_counter += 1
+        if str == old or strip_counter == 20:
+            break
+    
+    print(strip_counter)
+    print(str)
+    return str
 
 def process_input_fragment(fragment):
     """
     Process input fragment before extracting words for
     query
+
+    Remove \n, \t, leading and trailing whitespaces
 
     Parameters:
     fragment: input fragment
@@ -74,9 +73,11 @@ def containsNonAlphaNum(word_list):
     bool: whether any word in the list contains a special
     character
     """
+    chars = ["-", "_", "."]
+    allow_chars = set(chars)
     for word in word_list:
         for char in word:
-            if not(char.isalnum()) and not(char == '-'):
+            if not(char.isalnum()) and char not in allow_chars:
                 return True
     return False
 
@@ -109,20 +110,18 @@ def main():
             for fragment in fragments_file:
                 fragment = process_input_fragment(fragment)
 
-                # print(fragment)
-
-                splitted_line = fragment.split()
-                number_of_words = len(splitted_line)
+                fragment_tokens = fragment.split()
+                number_of_words = len(fragment_tokens)
                 query = ""
 
                 # single disjunction query
                 if number_of_words <= 5:
-                    query = '_'.join(splitted_line)
+                    query = '_'.join(fragment_tokens)
                     # conjunction of two disjunctions
                 elif number_of_words <= 20:
-                    start = '_'.join(splitted_line[5:10])
-                    end = '_'.join(splitted_line[-10:-5])
-                    query = start + '%3B' + end
+                    start = '_'.join(fragment_tokens[5:10])
+                    end = '_'.join(fragment_tokens[-10:-5])
+                    query = start + ';' + end
                 else:
                     # positions to pick multigrams
                     half_length = number_of_words / 2
@@ -130,18 +129,24 @@ def main():
                     three_querter_length = (3 * number_of_words) / 4
 
                     # conjunction of three disjunctions
-                    start = strip_leading_trailing_special_char(splitted_line[5:7])
-                    end = strip_leading_trailing_special_char(splitted_line[-7:-5])
+                    start = strip_leading_trailing_special_char('_'.join(fragment_tokens[4:8]))
+                    end = strip_leading_trailing_special_char('_'.join(fragment_tokens[-8:-4]))
 
-                    middle_disjunction_words = strip_leading_trailing_special_char(splitted_line[ math.trunc(half_length-1) : math.trunc(half_length+1)])
-                    left_disjunction_words = strip_leading_trailing_special_char(splitted_line[math.trunc(quarter_length-1): math.trunc(quarter_length+1)])
-                    right_disjunction_words = strip_leading_trailing_special_char(splitted_line[math.trunc(three_querter_length-1): math.trunc(three_querter_length+1)])
+                    middle_disjunction_words = strip_leading_trailing_special_char('_'.join(fragment_tokens[ math.trunc(half_length-2) : math.trunc(half_length+2)]))
+                    left_disjunction_words = strip_leading_trailing_special_char('_'.join(fragment_tokens[math.trunc(quarter_length-2): math.trunc(quarter_length+2)]))
+                    right_disjunction_words = strip_leading_trailing_special_char('_'.join(fragment_tokens[math.trunc(three_querter_length-2): math.trunc(three_querter_length+2)]))
 
-                    query = '_'.join(start if not(containsNonAlphaNum(start)) else '') + "%3B" + \
-                        '_'.join(left_disjunction_words if not(containsNonAlphaNum(left_disjunction_words)) else '') + "%3B" + \
-                            '_'.join(middle_disjunction_words if not(containsNonAlphaNum(middle_disjunction_words)) else '') + "%3B" + \
-                                '_'.join(right_disjunction_words if not(containsNonAlphaNum(right_disjunction_words)) else '') + "%3B" + \
-                                    '_'.join(end if not(containsNonAlphaNum(end)) else '')
+                    print("start: " + start)
+                    print("left:" + left_disjunction_words)
+                    print("middle: " + middle_disjunction_words)
+                    print("right: " + right_disjunction_words)
+                    print("end: " + end)
+
+                    query = (start if not(containsNonAlphaNum(start)) else '') + ";" + \
+                        (left_disjunction_words if not(containsNonAlphaNum(left_disjunction_words)) else '') + ";" + \
+                            (middle_disjunction_words if not(containsNonAlphaNum(middle_disjunction_words)) else '') + ";" + \
+                                (right_disjunction_words if not(containsNonAlphaNum(right_disjunction_words)) else '') + ";" + \
+                                    (end if not(containsNonAlphaNum(end)) else '')
                 
                 print("Number of words:" + str(number_of_words))
                 print("Formed query: " + query)
@@ -149,14 +154,18 @@ def main():
                 queries_file.write(query)
                 queries_file.write('\n')
 
-                # # Hit get_literature_evidence
-                # params = "&only_meta=1"
-                # url = API + "token=" + query + params
-                # print("Firing API: " + url)
-                # api_response = requests.get(url, cookies=COOKIE)
-                # json_response = json.loads(api_response.text)
+    # Hit get_literature_evidence with the given queries
+    print("Hitting get_literature_evidence with given queries")
 
-                # print(json_response)
+    with open("queries.txt", 'r') as queries_file:
+        for query in queries_file:
+            input_params = {'only_meta': '1', 'doc_token': query}
+            res = requests.get(API, params=input_params, headers="", cookies=COOKIE).json()["result"]
+            # with open("response_1.json", 'w') as response_file:
+            #     json.dump(res, response_file)
+            print(res["num_results"])
+
+
 
     sys.exit()
     # Get the documents containing the start_doc_tokens
