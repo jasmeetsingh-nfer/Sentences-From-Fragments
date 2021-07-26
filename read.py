@@ -72,6 +72,7 @@ def get_multigrams_from_fragment(fragment):
 def hit_get_literature_evidence(multigrams, n_fragment):
     """
     Hit get literature evidence for a combination of the multigrams
+    Save responses per fragment in responses directory
 
     Parameters:
     multigrams: list of multigrams extracted from the fragment
@@ -96,12 +97,16 @@ def hit_get_literature_evidence(multigrams, n_fragment):
         #print(final_miltigrams)
         input_params = {'only_meta': '1', 'doc_token': final_miltigrams}
         res = requests.get(API, params=input_params, headers="", cookies=COOKIE).json()["result"]
-        with open("responses/temp.json", 'w') as temp:
+        
+        response_filename_fragment = "responses/fragment" + n_fragment + ".json"
+        with open(response_filename_fragment, 'w') as temp:
             n_results = res["num_results"]
 
-            # Save the result which contains the minimum number of documents
+            # Save the result which contains the minimum number of documents, with only_meta as 0
             if min_result_number > n_results:
-                json.dump(res, temp)
+                input_params = {'doc_token': final_miltigrams}
+                response = requests.get(API, params=input_params, headers="", cookies=COOKIE).json()
+                json.dump(response, temp)
                 min_result_number = n_results
             print(n_results)
             if n_results > 0 and n_results < 10:
