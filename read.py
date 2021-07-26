@@ -1,10 +1,16 @@
-import json, requests, os, sys, math
+import json, requests, os, sys, math, random
+from typing import final
+import string
 from string import punctuation
 
 API = "https://preview.nferx.com/semantics/v1/get_literature_evidence?only_meta=1&"
 COOKIE = {"csrftoken": "XBVPbvzt6gIC2pigF7CPSGaORvPZsqRGSZknmLNhOHNi6wy96t8uO6oSdgRdTTg3", "sessionid": "s55g3459bwoc40m3fy3g2lois8wr7tiz;"}
 
-FRAGMENTS_TO_PROCESS = 50
+FRAGMENTS_TO_PROCESS = 20
+N_MULTIGRAMS = 4
+N_WORDS_IN_MULTIGRAM = 4
+
+TOTAL_TRIES_WITH_N_MULTIGRAMS = 5
 
 def strip_leading_trailing_special_char(str):
     strip_counter = 0
@@ -19,6 +25,109 @@ def strip_leading_trailing_special_char(str):
     print(strip_counter)
     print(str)
     return str
+
+def get_multigrams_from_fragment(fragment):
+    multigrams = []
+    start = 0
+    end = 0
+    n_multigram = 0
+    # Form 4 multigrams
+    while end < len(fragment) and start <= end and n_multigram < N_MULTIGRAMS:
+        # Form one multigram
+        n_word = 0
+        while end < len(fragment) and start <= end and n_word < 4:
+            restart = False
+            # Move to next word end
+            while end < len(fragment) and fragment[end] != ' ':
+                # Move start of fragment to here if not alphanum
+                if not fragment[end].isalnum():
+                    # Move to end of word
+                    while end < len(fragment) and fragment[end] != ' ':
+                        end += 1
+                    start = end + 1
+                    end = start
+                    restart = True
+                    break
+                else:
+                    end += 1
+            if restart:
+                continue
+
+            if fragment[end] == ' ':
+                n_word += 1
+                end += 1
+
+        if n_word == 4:
+            multigrams.append(fragment[start:end-1])
+            start = end
+            end = start
+
+    filtered_multigrams = []
+    for multigram in multigrams:
+        if len(multigram.split()) > 3 and len(multigram.split()) < 6:
+            filtered_multigrams.append(multigram)
+
+    return filtered_multigrams
+
+def hit_get_literature_evidence(multigrams, n_fragment):
+    """
+    Hit get literature evidence for a combination of the multigrams
+
+    Parameters:
+    multigrams: list of multigrams extracted from the fragment
+    multigrams don't contain any special characters
+
+    Returns:
+    """
+    success = False
+    n_try = 0
+
+    # try TOTAL_TRIES_WITH_N_MULTIGRAMS times with N_MULTIGRAMS grams
+    n_words_in_gram = N_MULTIGRAMS
+    tried_five_gram = False
+    tried_three_gram = False
+    n_results = 0
+
+    min_result_number = 10000
+
+    while success == False and n_try < TOTAL_TRIES_WITH_N_MULTIGRAMS:
+        n_words_in_gram = min(n_words_in_gram, len(multigrams))
+        final_miltigrams = ';'.join(random.sample(multigrams, n_words_in_gram))
+        #print(final_miltigrams)
+        input_params = {'only_meta': '1', 'doc_token': final_miltigrams}
+        res = requests.get(API, params=input_params, headers="", cookies=COOKIE).json()["result"]
+        with open("responses/temp.json", 'w') as temp:
+            n_results = res["num_results"]
+
+            # Save the result which contains the minimum number of documents
+            if min_result_number > n_results:
+                json.dump(res, temp)
+                min_result_number = n_results
+            print(n_results)
+            if n_results > 0 and n_results < 10:
+                success = True
+            
+            n_try += 1
+    
+            # if too many results in query, try 5 grams
+            if success == False and n_results > 10 and n_try == TOTAL_TRIES_WITH_N_MULTIGRAMS and tried_five_gram == False:
+                n_try = 0
+                n_words_in_gram = N_MULTIGRAMS + 1
+                tried_five_gram = True
+                continue
+
+            # if zero results in query, try 3 grams
+            if success == False and n_results == 0 and n_try == TOTAL_TRIES_WITH_N_MULTIGRAMS and tried_three_gram == False:
+                n_try = 0
+                n_words_in_gram = N_MULTIGRAMS - 1
+                tried_three_gram = True
+                continue
+    
+    if success == False:
+        if n_results > 10:
+            print("More than 10 results found for fragment")
+        elif n_results < 0:
+            print("No results found for fragment")
 
 def process_input_fragment(fragment):
     """
@@ -84,7 +193,7 @@ def containsNonAlphaNum(word_list):
 def main():
     # Extract fragments from a v3/get_relevant_docs response
     print("Reading sample fragments from relevant docs response.")
-    with open("response.json", 'r') as f:
+    with open("sample_response.json", 'r') as f:
         data = json.load(f)
         fragments = []
 
@@ -107,7 +216,13 @@ def main():
     print("Extracting middle few words from fragments after reading fragments file.")
     with open("queries.txt", 'w') as queries_file:
         with open("fragments.txt", 'r') as fragments_file:
+            n_fragment = 0
             for fragment in fragments_file:
+                print("Fragment: #", n_fragment)
+                multigrams = get_multigrams_from_fragment(fragment)
+                hit_get_literature_evidence(multigrams, n_fragment)
+                n_fragment += 1
+                continue
                 fragment = process_input_fragment(fragment)
 
                 fragment_tokens = fragment.split()
@@ -153,17 +268,6 @@ def main():
 
                 queries_file.write(query)
                 queries_file.write('\n')
-
-    # Hit get_literature_evidence with the given queries
-    print("Hitting get_literature_evidence with given queries")
-
-    with open("queries.txt", 'r') as queries_file:
-        for query in queries_file:
-            input_params = {'only_meta': '1', 'doc_token': query}
-            res = requests.get(API, params=input_params, headers="", cookies=COOKIE).json()["result"]
-            # with open("response_1.json", 'w') as response_file:
-            #     json.dump(res, response_file)
-            print(res["num_results"])
 
 
 
