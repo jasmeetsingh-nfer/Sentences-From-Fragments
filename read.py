@@ -1,4 +1,5 @@
 import json, requests, os, sys, math, random, nltk
+import string
 from typing import final
 from pathlib import Path
 from nltk import PunktSentenceTokenizer as punkt
@@ -8,7 +9,7 @@ from string import punctuation
 API = "https://preview.nferx.com/semantics/v1/get_literature_evidence?"
 COOKIE = {"csrftoken": "XBVPbvzt6gIC2pigF7CPSGaORvPZsqRGSZknmLNhOHNi6wy96t8uO6oSdgRdTTg3", "sessionid": "s55g3459bwoc40m3fy3g2lois8wr7tiz;"}
 
-FRAGMENTS_TO_PROCESS = 2
+FRAGMENTS_TO_PROCESS = 100
 N_MULTIGRAMS = 4
 N_WORDS_IN_MULTIGRAM = 4
 
@@ -114,15 +115,9 @@ def hit_get_literature_evidence(multigrams, n_fragment):
             success = True
 
         # Save the result which contains the minimum number of documents, with only_meta as 0
-        if min_result_number > n_results:
+        if min_result_number > n_results and n_results > 0 and n_results < 150:
             with open(response_filename_fragment, 'w', encoding='utf8') as temp:
-
-                # Get fragments only if a lot of results are present
-                if n_results > 10:
-                        input_params = {'only_meta': '0', 'doc_ids': doc_ids, 'doc_token': final_multigrams}
-                else:
-                        input_params = {'only_meta': '0', 'doc_token': final_multigrams, 'doc_ids': doc_ids}
-
+                input_params = {'only_meta': '0', 'doc_token': final_multigrams, 'doc_ids': doc_ids}
                 response = requests.get(API, params=input_params, headers="", cookies=COOKIE).json()
                 json.dump(response, temp, ensure_ascii=False)
                 min_result_number = n_results
@@ -157,14 +152,17 @@ def extract_sentences(n_fragment):
 
     # Get the fragment to match
     fragment = ""
-    with open("fragments.txt", 'r') as fragment_file:
+    with open("fragments.txt", 'r', encoding='utf-8') as fragment_file:
         for i, line in enumerate(fragment_file):
             if i == n_fragment:
                 fragment = line.strip('\n\r')
-
+                fragment = fragment.replace("\\n", "\n")
     
     # Match with document
-    with open(response_filename_fragment, 'r') as response_file:
+    if not Path(response_filename_fragment).is_file():
+        return ""
+
+    with open(response_filename_fragment, 'r', encoding='utf-8') as response_file:
         response = json.load(response_file)
 
         for document in response["result"]["literature"]:
@@ -184,12 +182,10 @@ def extract_sentences(n_fragment):
                 end_pos = bisect.bisect_right(sent_end_pos, loc + len(fragment)) + 1
 
                 start_pos = max(0, start_pos)
-                end_pos = min(end_pos, len(sent_end_pos))
+                end_pos = min(end_pos, len(sent_end_pos)-1)
 
                 final_sentence = full_text[sent_end_pos[start_pos]: sent_end_pos[end_pos]]
                 return final_sentence
-
-
 
 
 def process_input_fragment(fragment):
@@ -270,7 +266,7 @@ def main():
         with open("fragments.txt", "w", encoding="utf-8") as file:
             for fragment in fragments:
                 fragment = fragment.replace("\n", "\\n")
-                file.write(fragment)
+                file.write(fragment.strip())
                 file.write('\n')
                 i += 1
                 if i == FRAGMENTS_TO_PROCESS:
@@ -285,15 +281,22 @@ def main():
                 print("Fragment: #", n_fragment)
                 multigrams = get_multigrams_from_fragment(fragment)
 
+                # No possible multigrams
+                if len(multigrams) == 0:
+                    final_sentences_file.write('\n')
+                    n_fragment += 1
+                    continue
+
                 response_filename_fragment = "responses/fragment" + str(n_fragment) + ".json"
-                if Path(response_filename_fragment).is_file():
+                if not Path(response_filename_fragment).is_file():
                     hit_get_literature_evidence(multigrams, n_fragment)
                 
                 final_sentence = extract_sentences(n_fragment)
 
-                if not final_sentence:
+                if not final_sentence or final_sentence == "":
                     final_sentences_file.write('\n')
                 else:
+                    final_sentence = final_sentence.replace("\n", "\\n")
                     final_sentences_file.write(final_sentence)
                     final_sentences_file.write('\n')
 
