@@ -1,12 +1,11 @@
-import json, requests, os, sys, math, random
-from typing import final
-import string
+import json, requests, os, sys, math, random, nltk
+from nltk import PunktSentenceTokenizer as punkt
 from string import punctuation
 
-API = "https://preview.nferx.com/semantics/v1/get_literature_evidence?only_meta=1&"
+API = "https://preview.nferx.com/semantics/v1/get_literature_evidence?"
 COOKIE = {"csrftoken": "XBVPbvzt6gIC2pigF7CPSGaORvPZsqRGSZknmLNhOHNi6wy96t8uO6oSdgRdTTg3", "sessionid": "s55g3459bwoc40m3fy3g2lois8wr7tiz;"}
 
-FRAGMENTS_TO_PROCESS = 20
+FRAGMENTS_TO_PROCESS = 2
 N_MULTIGRAMS = 4
 N_WORDS_IN_MULTIGRAM = 4
 
@@ -93,46 +92,94 @@ def hit_get_literature_evidence(multigrams, n_fragment):
 
     while success == False and n_try < TOTAL_TRIES_WITH_N_MULTIGRAMS:
         n_words_in_gram = min(n_words_in_gram, len(multigrams))
-        final_miltigrams = ';'.join(random.sample(multigrams, n_words_in_gram))
-        #print(final_miltigrams)
-        input_params = {'only_meta': '1', 'doc_token': final_miltigrams}
+        final_multigrams = ';'.join(random.sample(multigrams, n_words_in_gram))
+        #print(final_multigrams)
+        input_params = {'only_meta': '1', 'doc_token': final_multigrams}
         res = requests.get(API, params=input_params, headers="", cookies=COOKIE).json()["result"]
         
-        response_filename_fragment = "responses/fragment" + n_fragment + ".json"
-        with open(response_filename_fragment, 'w') as temp:
-            n_results = res["num_results"]
+        response_filename_fragment = "responses/fragment" + str(n_fragment) + ".json"
+        n_results = res["num_results"]
 
-            # Save the result which contains the minimum number of documents, with only_meta as 0
-            if min_result_number > n_results:
-                input_params = {'doc_token': final_miltigrams}
+        # Gather doc ids
+        doc_ids = []
+        for document in res["literature"]:
+            doc_ids.append(document["id"])
+        doc_ids = ','.join(map(str, doc_ids))
+
+        print(n_results)
+        if n_results > 0 and n_results < 10:
+            success = True
+
+        # Save the result which contains the minimum number of documents, with only_meta as 0
+        if min_result_number > n_results:
+            with open(response_filename_fragment, 'w', encoding='utf8') as temp:
+
+                # Get fragments only if a lot of results are present
+                if n_results > 10:
+                        input_params = {'only_meta': '0', 'doc_ids': doc_ids, 'token': final_multigrams}
+                else:
+                        input_params = {'only_meta': '0', 'doc_token': final_multigrams, 'doc_ids': doc_ids}
+
                 response = requests.get(API, params=input_params, headers="", cookies=COOKIE).json()
-                json.dump(response, temp)
+                json.dump(response, temp, ensure_ascii=False)
                 min_result_number = n_results
-            print(n_results)
-            if n_results > 0 and n_results < 10:
-                success = True
-            
-            n_try += 1
-    
-            # if too many results in query, try 5 grams
-            if success == False and n_results > 10 and n_try == TOTAL_TRIES_WITH_N_MULTIGRAMS and tried_five_gram == False:
-                n_try = 0
-                n_words_in_gram = N_MULTIGRAMS + 1
-                tried_five_gram = True
-                continue
+        
+        n_try += 1
 
-            # if zero results in query, try 3 grams
-            if success == False and n_results == 0 and n_try == TOTAL_TRIES_WITH_N_MULTIGRAMS and tried_three_gram == False:
-                n_try = 0
-                n_words_in_gram = N_MULTIGRAMS - 1
-                tried_three_gram = True
-                continue
+        # if too many results in query, try 5 grams
+        if success == False and n_results > 10 and n_try == TOTAL_TRIES_WITH_N_MULTIGRAMS and tried_five_gram == False:
+            n_try = 0
+            n_words_in_gram = N_MULTIGRAMS + 1
+            tried_five_gram = True
+            continue
+
+        # if zero results in query, try 3 grams
+        if success == False and n_results == 0 and n_try == TOTAL_TRIES_WITH_N_MULTIGRAMS and tried_three_gram == False:
+            n_try = 0
+            n_words_in_gram = N_MULTIGRAMS - 1
+            tried_three_gram = True
+            continue
     
     if success == False:
         if n_results > 10:
             print("More than 10 results found for fragment")
         elif n_results < 0:
             print("No results found for fragment")
+
+def extract_sentences(n_fragment):
+    """
+    Extract sentences given a fragment number after loading file
+    """
+    response_filename_fragment = "responses/fragment" + str(n_fragment) + ".json"
+
+    # Get the fragment to match
+    fragment = ""
+    with open("fragments.txt", 'r') as fragment_file:
+        for i, line in enumerate(fragment_file):
+            if i == n_fragment:
+                fragment = line.strip('\n\r')
+
+    
+    # Match with document
+    with open(response_filename_fragment, 'r') as response_file:
+        response = json.load(response_file)
+
+        for document in response["result"]["literature"]:
+            loc = document["sentences"][0].find(fragment)
+            if loc != -1:
+                full_text = document["sentences"][0]
+
+                #reverse and forward search full stop (frag start = loc, frag end = loc + fragment length)
+                #sentences = nltk.sent_tokenize(full_text)
+
+                custom_sent_tokenizer = punkt(full_text)
+                sent_end_pos = []
+                for _, sent_stop in custom_sent_tokenizer.span_tokenize(full_text):
+                    sent_end_pos.append(sent_stop)
+
+                sentence_end_pos = document["sentences"][0].find('.', loc + len(fragment))
+
+
 
 def process_input_fragment(fragment):
     """
@@ -203,8 +250,9 @@ def main():
         fragments = []
 
         for doc in data["result"]["literature"]:
-            for sentence in doc["sentences"]:
-                fragments.append(sentence)
+            with open("fragments.txt", 'r') as fragments_file:
+                for sentence in doc["sentences"]:
+                    fragments.append(sentence)
 
         print("Writing fragments to a file.")
         i = 0
@@ -226,6 +274,7 @@ def main():
                 print("Fragment: #", n_fragment)
                 multigrams = get_multigrams_from_fragment(fragment)
                 hit_get_literature_evidence(multigrams, n_fragment)
+                extract_sentences(n_fragment)
                 n_fragment += 1
                 continue
                 fragment = process_input_fragment(fragment)
