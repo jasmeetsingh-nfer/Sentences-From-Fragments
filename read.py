@@ -1,5 +1,8 @@
 import json, requests, os, sys, math, random, nltk
+from typing import final
+from pathlib import Path
 from nltk import PunktSentenceTokenizer as punkt
+import bisect
 from string import punctuation
 
 API = "https://preview.nferx.com/semantics/v1/get_literature_evidence?"
@@ -116,7 +119,7 @@ def hit_get_literature_evidence(multigrams, n_fragment):
 
                 # Get fragments only if a lot of results are present
                 if n_results > 10:
-                        input_params = {'only_meta': '0', 'doc_ids': doc_ids, 'token': final_multigrams}
+                        input_params = {'only_meta': '0', 'doc_ids': doc_ids, 'doc_token': final_multigrams}
                 else:
                         input_params = {'only_meta': '0', 'doc_token': final_multigrams, 'doc_ids': doc_ids}
 
@@ -177,7 +180,15 @@ def extract_sentences(n_fragment):
                 for _, sent_stop in custom_sent_tokenizer.span_tokenize(full_text):
                     sent_end_pos.append(sent_stop)
 
-                sentence_end_pos = document["sentences"][0].find('.', loc + len(fragment))
+                start_pos = bisect.bisect_left(sent_end_pos, loc) - 1
+                end_pos = bisect.bisect_right(sent_end_pos, loc + len(fragment)) + 1
+
+                start_pos = max(0, start_pos)
+                end_pos = min(end_pos, len(sent_end_pos))
+
+                final_sentence = full_text[sent_end_pos[start_pos]: sent_end_pos[end_pos]]
+                return final_sentence
+
 
 
 
@@ -267,14 +278,25 @@ def main():
 
     # Get the first five non-space starting and ending words of each fragment
     print("Extracting middle few words from fragments after reading fragments file.")
-    with open("queries.txt", 'w') as queries_file:
+    with open("final_sentences.txt", 'w') as final_sentences_file:
         with open("fragments.txt", 'r') as fragments_file:
             n_fragment = 0
             for fragment in fragments_file:
                 print("Fragment: #", n_fragment)
                 multigrams = get_multigrams_from_fragment(fragment)
-                hit_get_literature_evidence(multigrams, n_fragment)
-                extract_sentences(n_fragment)
+
+                response_filename_fragment = "responses/fragment" + str(n_fragment) + ".json"
+                if Path(response_filename_fragment).is_file():
+                    hit_get_literature_evidence(multigrams, n_fragment)
+                
+                final_sentence = extract_sentences(n_fragment)
+
+                if not final_sentence:
+                    final_sentences_file.write('\n')
+                else:
+                    final_sentences_file.write(final_sentence)
+                    final_sentences_file.write('\n')
+
                 n_fragment += 1
                 continue
                 fragment = process_input_fragment(fragment)
