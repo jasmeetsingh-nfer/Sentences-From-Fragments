@@ -12,6 +12,7 @@ COOKIE = {"csrftoken": "XBVPbvzt6gIC2pigF7CPSGaORvPZsqRGSZknmLNhOHNi6wy96t8uO6oS
 FRAGMENTS_TO_PROCESS = 100
 N_MULTIGRAMS = 4
 N_WORDS_IN_MULTIGRAM = 4
+N_MAX_DOCS_TO_DOWNLOAD = 400
 
 TOTAL_TRIES_WITH_N_MULTIGRAMS = 5
 
@@ -115,7 +116,7 @@ def hit_get_literature_evidence(multigrams, n_fragment):
             success = True
 
         # Save the result which contains the minimum number of documents, with only_meta as 0
-        if min_result_number > n_results and n_results > 0 and n_results < 150:
+        if min_result_number > n_results and n_results > 0 and n_results < N_MAX_DOCS_TO_DOWNLOAD:
             with open(response_filename_fragment, 'w', encoding='utf8') as temp:
                 input_params = {'only_meta': '0', 'doc_token': final_multigrams, 'doc_ids': doc_ids}
                 response = requests.get(API, params=input_params, headers="", cookies=COOKIE).json()
@@ -155,8 +156,9 @@ def extract_sentences(n_fragment):
     with open("fragments.txt", 'r', encoding='utf-8') as fragment_file:
         for i, line in enumerate(fragment_file):
             if i == n_fragment:
-                fragment = line.strip('\n\r')
-                fragment = fragment.replace("\\n", "\n")
+                fragment = line.replace("\\n", "\n")
+                fragment = fragment.strip('\n\r')
+                fragment = fragment.strip()
     
     # Match with document
     if not Path(response_filename_fragment).is_file():
